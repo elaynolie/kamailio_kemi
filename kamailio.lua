@@ -1,9 +1,8 @@
--- SIP request routing, equivalent of request_route{}
+-- request_route{}
 function ksr_request_route()
     KSR.info("===== SIP request - from kamailio lua script\n");
 
     route_reqinit()
-    -- route_fix_format() -- Uncomment if needed
     route_natmanage()
     route_canceling()
 
@@ -18,34 +17,27 @@ function ksr_request_route()
 
     if not route_location() then
         route_to_pstn()
-        -- route_cr() -- Uncomment if needed
     end
 
     route_relay()
 end
 
--- SIP response routing, equivalent of reply_route{}
+-- onreply_route {}
 function ksr_reply_route()
     KSR.info("===== SIP response - from kamailio lua script\n")
     KSR.hdr.append("Carrier: 77.51.206.229\r\n")
-    -- route_100() -- Uncomment if needed
-    -- route_fix_contact() -- Uncomment if needed
-    -- route_request_to_api() -- Uncomment if needed
     route_natmanage()
     route_sdpmanage()
 end
 
--- Branch route callback, equivalent of branch_route[MANAGE_BRANCH]{}
+--  branch_route{}
 function ksr_branch_route_manage_branch()
     KSR.info("===== branch route - MANAGE_BRANCH\n")
-    -- KSR.hdr.remove("Contact") -- Uncomment if needed
     -- KSR.hdr.append("Contact: <sip:" .. KSR.pv.get("$fU") .. "@5.39.220.42>") -- Uncomment if needed
     -- KSR.hdr.append("Contact: <sip:543543623@5.39.220.42>") -- Uncomment if needed
-    -- route_re() -- Uncomment if needed
     route_sdpmanage()
 end
 
--- Failure route callback, equivalent of failure_route[MANAGE_FAILURE]{}
 function ksr_failure_route_manage_failure()
     KSR.info("===== failure route - MANAGE_FAILURE\n")
     
@@ -63,36 +55,100 @@ function ksr_failure_route_manage_failure()
     end
 end
 
--- Event route callback, equivalent of event_route[topoh:msg-outgoing]{}
 function ksr_event_route_topoh_msg_outgoing()
     if KSR.pv.get("$sndto(ip)") == "77.51.206.229" then
         KSR.x.drop()
     end
 end
 
--- Define each route function separately
-
 function route_reqinit()
     KSR.info("===== Executing route REQINIT\n")
-    -- Add the equivalent of REQINIT logic here
+    KSR.sl.set_reply_no_connect()
+
+    if KSR.pv.get("$si") ~= KSR.pv.get("$myself") then
+        if KSR.pv.get("$sht(ipban=>$si)", 1)
+        return -1 
+    end
+
+
+    if.KSR.maxfwd.process.maxfwd(10) < 1 then
+        KSR.sl.sl_send_reply(483,"Too many hoops")
+        return(-1)
+    end
+
+    if KSR.tm.is_method("OPTIONS") and KSR.pv.get("$rU") == nil and KSR.pv.get("$ru") == KSR.pv.get("$myself") then
+        KSR.sl.sl_send_reply(200, "ok")
+        return -1
+    end
+
+    if KSR.sanity.sanity_check(17895, 7) < 0 then
+        KSR.xlog("Malformed SIP request from " .. KSR.pv.get("$si") .. ":" .. KSR.pv.get("$sp") .. "\n")
+        return -1
+    end
 end
+
+function route_auth()
+    if KSR.is_method("REGISTER") then
+        if not KSR.auth_check(KSR.pv.get("$fd"),"subscriber", "1") then
+            KSR.auth_challenge(KSR.pv.get("$fd"), "0")
+            return
+        end
+        KSR.consume_credentials()
+    end
+end
+
+function route_registrar()
+    if not KSR.is_method("REGISTER") then
+        return
+    end
+
+    if not KSR.save("location") then
+        KSR.sl_reply_error()
+    end
+end
+
 
 function route_natmanage()
-    KSR.info("===== Executing route NATMANAGE\n")
-    -- Add the equivalent of NATMANAGE logic here
+    KSR.tm.force_rport()
+    KSR.xlog("L_INFO", "received avp before: " .. KSR.pv.get("$avp(RECEIVED)"))
+    KSR.nathelper.fix_nated_register()
+    KSR.xlog("L_INFO", "received after fix_nated_register: " .. KSR.pv.get("$avp(RECEIVED)"))
 end
 
+
 function route_canceling()
-    KSR.info("===== Executing route CANCELING\n")
-    -- Add the equivalent of CANCELING logic here
+    if KSR.siputils.is_method("CANCEL") then
+        if KSR.tm.t_check_trans() == false then
+            return 
+    end
 end
 
 function route_withindlg()
-    KSR.info("===== Checking route WITHINDLG\n")
-    -- Add the equivalent of WITHINDLG logic here
-    -- Return true/false based on condition
-    return true  -- Example return value; modify based on actual logic
+    if not KSR.siputils.has_totag() then
+        return -1  --  If totag not found return -1 
+    end
+
+
+    if KSR.tm.loose_route() then
+        return 1  -- If use loose_route return 1
+    end
+
+    -- if use loose_route next route go to route DLURI
+    if KSR.tm.loose_route_mode("1") then
+        KSR.route("DLGURI")  
+    end
+
+    if KSR.siputils.is_method("ACK") then
+        if KSR.tm.t_check_trans() then
+            return 1  -- Continue if transaction found
+        else
+            return  -- Exit if transaction not found
+        end
+    end
+    KSR.sl.send_reply(404, "Not here")
+    return  -- Exit from this route
 end
+
 
 function route_relay()
     KSR.info("===== Executing route RELAY\n")
