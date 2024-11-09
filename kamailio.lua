@@ -151,10 +151,22 @@ end
 
 
 function route_relay()
-    KSR.info("===== Executing route RELAY\n")
-    if KSR.tm.t_relay() < 0 then
-        KSR.sl.send_reply(500, "Server Error")
+    if KSR.siputils.is_method("INVITE") then
+        if not KSR.tm.t_is_set("branch_route") then
+            KSR.tm.t_on_branch("ksr_branch_route_manage_branch")
+        end
+
+        if not KSR.tm.t_is_set("failure_route") then
+            KSR.tm.t_on_failure("ksr_failure_route_manage_failure")
+        end
     end
+    if KSR.tm.t_relay() < 0 then
+        KSR.sl.sl_reply_error()
+    end
+
+    return 1  
+end
+
 end
 
 function route_sipout()
