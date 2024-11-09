@@ -1,24 +1,19 @@
 -- request_route{}
 function ksr_request_route()
-    KSR.info("===== Kamailio KEMI script on Lua\n");
-
+    KSR.info("===== Kamailio KEMI script on Lua\n")
     route_reqinit()
     route_natmanage()
     route_canceling()
-
     if route_withindlg() then
         route_relay()
     end
-
     route_sipout()
     route_auth()
     route_registrar()
     route_routing()
-
     if not route_location() then
         route_to_pstn()
     end
-
     route_relay()
 end
 
@@ -30,7 +25,7 @@ function ksr_reply_route()
     route_sdpmanage()
 end
 
---  branch_route{}
+-- branch_route{}
 function ksr_branch_route_manage_branch()
     KSR.info("===== branch route - MANAGE_BRANCH\n")
     route_sdpmanage()
@@ -63,14 +58,14 @@ function route_reqinit()
     KSR.sl.set_reply_no_connect()
 
     if KSR.pv.get("$si") ~= KSR.pv.get("$myself") then
-        if KSR.pv.get("$sht(ipban=>$si)", 1)
-        return -1 
-    end
+        if KSR.pv.get("$sht(ipban=>$si)", 1) then
+            return -1
+        end
 
-
-    if.KSR.maxfwd.process.maxfwd(10) < 1 then
-        KSR.sl.sl_send_reply(483,"Too many hoops")
-        return(-1)
+        if KSR.maxfwd.process_maxfwd(10) < 1 then
+            KSR.sl.sl_send_reply(483, "Too many hops")
+            return -1
+        end
     end
 
     if KSR.tm.is_method("OPTIONS") and KSR.pv.get("$rU") == nil and KSR.pv.get("$ru") == KSR.pv.get("$myself") then
@@ -104,7 +99,6 @@ function route_registrar()
     end
 end
 
-
 function route_natmanage()
     KSR.tm.force_rport()
     KSR.xlog("L_INFO", "received avp before: " .. KSR.pv.get("$avp(RECEIVED)"))
@@ -112,19 +106,18 @@ function route_natmanage()
     KSR.xlog("L_INFO", "received after fix_nated_register: " .. KSR.pv.get("$avp(RECEIVED)"))
 end
 
-
 function route_canceling()
     if KSR.siputils.is_method("CANCEL") then
         if KSR.tm.t_check_trans() == false then
-            return 
+            return
+        end
     end
 end
 
 function route_withindlg()
     if not KSR.siputils.has_totag() then
-        return -1  --  If totag not found return -1 
+        return -1  -- If totag not found return -1 
     end
-
 
     if KSR.tm.loose_route() then
         return 1  -- If use loose_route return 1
@@ -146,7 +139,6 @@ function route_withindlg()
     return  -- Exit from this route
 end
 
-
 function route_relay()
     if KSR.siputils.is_method("INVITE") then
         if not KSR.tm.t_is_set("branch_route") then
@@ -160,25 +152,12 @@ function route_relay()
     if KSR.tm.t_relay() < 0 then
         KSR.sl.sl_reply_error()
     end
-
-    return 1  
-end
-
+    return 1
 end
 
 function route_sipout()
     KSR.info("===== Executing route SIPOUT\n")
     -- Add the equivalent of SIPOUT logic here
-end
-
-function route_auth()
-    KSR.info("===== Executing route AUTH\n")
-    -- Add the equivalent of AUTH logic here
-end
-
-function route_registrar()
-    KSR.info("===== Executing route REGISTRAR\n")
-    -- Add the equivalent of REGISTRAR logic here
 end
 
 function route_routing()
@@ -187,14 +166,14 @@ function route_routing()
         KSR.hdr.remove("Route")
         KSR.rr.record_route()
     end
+end
 
-    function route_location()
-        if KSR.registrar.lookup("location") < 0 then
-            -- KSR.sl.send_reply(404, "Not Found")
-            return -1
-        end
-        return 1
+function route_location()
+    if KSR.registrar.lookup("location") < 0 then
+        return -1
     end
+    return 1
+end
 
 function route_to_pstn()
     KSR.pv.sets("$fU", "543543623")
@@ -202,16 +181,15 @@ function route_to_pstn()
     KSR.pv.sets("$ru", ruri)
 end
 
-
 function route_sdpmanage()
     KSR.info("===== Executing route SDPMANAGE\n")
     local rtp_media = "replace-origin replace-session-connection media SIP-source-address symmetric"
     if KSR.pv.get("$rb") == nil or KSR.pv.get("$rb") == "" then
-        return 
+        return
     end
     if (KSR.siputils.is_request() and KSR.siputils.is_method("BYE")) or 
        (KSR.siputils.is_reply() and KSR.pv.get("$rs") > 299) then
-        KSR.xlog.xlog("L_INFO", "Method BYE or SIP cause > 299\n")
+        KSR.xlog("L_INFO", "Method BYE or SIP cause > 299\n")
         KSR.rtpengine.rtpengine_manage("") 
         return
     end
@@ -222,23 +200,4 @@ function route_fix_contact()
     if KSR.siputils.is_reply() or not KSR.flags.isflagset(FLAG_TO_CARRIER) then
         KSR.nathelper.fix_nated_contact()
     end
-
-
-    function route_sipout()
-        if KSR.is_myself(KSR.pv.get("$ru")) then
-            return
-        end
-        KSR.hdr.append("P-Hint: outbound\r\n")
-        route_relay()
-        KSR.x.exit()
-    end
-
-
-
-
-
 end
-
-
-
-
