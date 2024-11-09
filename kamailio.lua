@@ -1,6 +1,6 @@
 -- request_route{}
 function ksr_request_route()
-    KSR.info("===== SIP request - from kamailio lua script\n");
+    KSR.info("===== Kamailio KEMI script on Lua\n");
 
     route_reqinit()
     route_natmanage()
@@ -33,14 +33,11 @@ end
 --  branch_route{}
 function ksr_branch_route_manage_branch()
     KSR.info("===== branch route - MANAGE_BRANCH\n")
-    -- KSR.hdr.append("Contact: <sip:" .. KSR.pv.get("$fU") .. "@5.39.220.42>") -- Uncomment if needed
-    -- KSR.hdr.append("Contact: <sip:543543623@5.39.220.42>") -- Uncomment if needed
     route_sdpmanage()
 end
 
 function ksr_failure_route_manage_failure()
     KSR.info("===== failure route - MANAGE_FAILURE\n")
-    
     if KSR.tm.t_check_status("404|503|486") then
         KSR.pv.sets("$ru", "sip:2" .. KSR.pv.get("$rU") .. "@77.51.206.229:5065")
         if KSR.tm.t_relay() < 0 then
@@ -186,19 +183,23 @@ end
 
 function route_routing()
     KSR.info("===== Executing route ROUTING\n")
-    -- Add the equivalent of ROUTING logic here
-end
+    if KSR.siputils.is_method("INVITE") and not KSR.siputils.has_totag() then
+        KSR.hdr.remove("Route")
+        KSR.rr.record_route()
+    end
 
-function route_location()
-    KSR.info("===== Executing route LOCATION\n")
-    -- Add the equivalent of LOCATION logic here
-    -- Return true/false based on condition
-    return false  -- Example return value; modify based on actual logic
-end
+    function route_location()
+        if KSR.registrar.lookup("location") < 0 then
+            -- KSR.sl.send_reply(404, "Not Found")
+            return -1
+        end
+        return 1
+    end
 
 function route_to_pstn()
-    KSR.info("===== Executing route TO_PSTN\n")
-    -- Add the equivalent of TO_PSTN logic here
+    KSR.pv.sets("$fU", "543543623")
+    local ruri = "sip:" .. KSR.pv.get("$rU") .. "@77.51.206.229:5065"
+    KSR.pv.sets("$ru", ruri)
 end
 
 
@@ -217,55 +218,27 @@ function route_sdpmanage()
     KSR.rtpengine.rtpengine_manage(rtp_media)
 end
 
+function route_fix_contact()
+    if KSR.siputils.is_reply() or not KSR.flags.isflagset(FLAG_TO_CARRIER) then
+        KSR.nathelper.fix_nated_contact()
+    end
 
 
-
-
--- Equivalent of route[REQINIT] in KEMI Lua
-
-function ksr_route_reqinit()
-    -- Equivalent of `set_reply_no_connect()` in KEMI
-    KSR.hdr.append("Reply-To: no-connect\r\n")
-
-    -- Check if the source IP is not the server itself
-    if KSR.pv.get("$si") ~= KSR.pv.get("$myself") then
-        -- Check if the IP is in the ipban shared table
-        if KSR.pv.get("$sht(ipban=>$si)") ~= nil then
-            KSR.xlog.xdbg("request from blocked IP - " .. KSR.pv.get("$rm") .. 
-                " from " .. KSR.pv.get("$fu") .. " (IP:" .. KSR.pv.get("$si") .. ":" .. KSR.pv.get("$sp") .. ")\n")
-            return 1 -- Exit the route
+    function route_sipout()
+        if KSR.is_myself(KSR.pv.get("$ru")) then
+            return
         end
-
-        -- Block requests from specific user agents
-        if string.match(KSR.pv.get("$ua"), "friendly%-scanner|sipcli|sipvicious|VaxSIPUserAgent|pplsip|Matrix") then
-            KSR.sl.send_reply(503, "Service temporary unavailable")
-            return 1 -- Exit the route
-        end
-
-        -- Pike module check for rate limiting
-        if KSR.pike.pike_check_req() < 0 then
-            KSR.xlog.xlog("L_ALERT", "ALERT: pike blocking " .. KSR.pv.get("$rm") ..
-                " from " .. KSR.pv.get("$fu") .. " (IP:" .. KSR.pv.get("$si") .. ":" .. KSR.pv.get("$sp") .. ")\n")
-            KSR.pv.seti("$sht(ipban=>$si)", 1)
-            return 1 -- Exit the route
-        end
+        KSR.hdr.append("P-Hint: outbound\r\n")
+        route_relay()
+        KSR.x.exit()
     end
 
-    -- Check and process Max-Forwards header
-    if KSR.maxfwd.process_maxfwd(10) < 0 then
-        KSR.sl.send_reply(483, "Too Many Hops")
-        return 1 -- Exit the route
-    end
 
-    -- Respond to OPTIONS requests for keepalive
-    if KSR.siputils.is_method("OPTIONS") and KSR.pv.is_myself("$ru") and KSR.pv.get("$rU") == nil then
-        KSR.sl.send_reply(200, "Keepalive")
-        return 1 -- Exit the route
-    end
 
-    -- Sanity check for malformed SIP requests
-    if KSR.sanity.sanity_check("17895", 7) < 0 then
-        KSR.xlog.xlog("Malformed SIP request from " .. KSR.pv.get("$si") .. ":" .. KSR.pv.get("$sp") .. "\n")
-        return 1 -- Exit the route
-    end
+
+
 end
+
+
+
+
