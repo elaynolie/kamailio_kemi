@@ -189,10 +189,24 @@ function route_to_pstn()
     -- Add the equivalent of TO_PSTN logic here
 end
 
+
 function route_sdpmanage()
     KSR.info("===== Executing route SDPMANAGE\n")
-    -- Add the equivalent of SDPMANAGE logic here
+    local rtp_media = "replace-origin replace-session-connection media SIP-source-address symmetric"
+    if KSR.pv.get("$rb") == nil or KSR.pv.get("$rb") == "" then
+        return 
+    end
+    if (KSR.siputils.is_request() and KSR.siputils.is_method("BYE")) or 
+       (KSR.siputils.is_reply() and KSR.pv.get("$rs") > 299) then
+        KSR.xlog.xlog("L_INFO", "Method BYE or SIP cause > 299\n")
+        KSR.rtpengine.rtpengine_manage("") 
+        return
+    end
+    KSR.rtpengine.rtpengine_manage(rtp_media)
 end
+
+
+
 
 
 -- Equivalent of route[REQINIT] in KEMI Lua
